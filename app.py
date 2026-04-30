@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import pickle
 import json
 
 import streamlit as st
@@ -12,6 +11,17 @@ import numpy as np
 
 # Resolve project directory reliably (PROJECT_DIR can be empty in Streamlit)
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect if running on Streamlit Cloud (no display, no pygame)
+IS_CLOUD = os.environ.get("STREAMLIT_SHARING_MODE") or not os.environ.get("DISPLAY", os.name == "nt")
+
+# Try importing pickle and neat for results page
+try:
+    import pickle
+    import neat
+    NEAT_AVAILABLE = True
+except ImportError:
+    NEAT_AVAILABLE = False
 
 st.set_page_config(page_title="Flappy Bird AI", page_icon="🐦", layout="wide")
 
@@ -168,6 +178,17 @@ elif page == "Train AI":
     st.title("🧠 Train the AI")
     st.markdown("Start NEAT evolution to teach the AI to play Flappy Bird.")
 
+    st.info(
+        "⚠️ **Training requires a local machine** with pygame and a display.\n\n"
+        "This feature does not work on Streamlit Cloud. To train locally, run:\n"
+        "```bash\n"
+        "pip install pygame neat-python\n"
+        "python3 train.py --mode train --generations 30\n"
+        "```"
+    )
+
+    st.divider()
+
     col1, col2 = st.columns(2)
     with col1:
         generations = st.slider("Number of generations", 5, 100, 30)
@@ -184,9 +205,23 @@ elif page == "Train AI":
         )
 
     output_path = os.path.join(PROJECT_DIR, "outputs", "best_genome.pkl")
-    stats_path = os.path.join(PROJECT_DIR, "outputs", "training_stats.json")
 
     if st.button("🚀 Start Training", type="primary", use_container_width=True):
+        # Check if we can actually run training
+        try:
+            import pygame
+            import neat
+        except ImportError:
+            st.error(
+                "**pygame** and **neat-python** are not installed in this environment.\n\n"
+                "To train the AI, run locally:\n"
+                "```bash\n"
+                "pip install pygame neat-python\n"
+                "python3 train.py --mode train --generations " + str(generations) + "\n"
+                "```"
+            )
+            st.stop()
+
         headless_flag = "--headless" if "Headless" in mode else ""
         cmd = (
             f"cd {PROJECT_DIR} && "
@@ -237,6 +272,17 @@ elif page == "Train AI":
 elif page == "Play Game":
     st.title("🎮 Play Flappy Bird")
 
+    st.info(
+        "⚠️ **Playing requires a local machine** with pygame installed.\n\n"
+        "This feature opens a Pygame window and cannot work on Streamlit Cloud.\n\n"
+        "**To play locally:**\n"
+        "```bash\n"
+        "pip install pygame neat-python\n"
+        "python3 train.py --mode play        # Play yourself\n"
+        "python3 train.py --mode replay      # Watch AI play\n"
+        "```"
+    )
+
     play_mode = st.radio("Mode", ["🤖 Watch AI Play", "👤 Play Yourself"])
 
     genome_path = os.path.join(PROJECT_DIR, "outputs", "best_genome.pkl")
@@ -246,10 +292,15 @@ elif page == "Play Game":
         st.markdown("Watch the trained AI play Flappy Bird perfectly.")
 
         if not os.path.exists(genome_path):
-            st.warning("No trained AI found. Go to **Train AI** tab first!")
+            st.warning("No trained AI found. Train locally first!")
         else:
             st.success(f"Trained genome found: `{genome_path}`")
             if st.button("▶️ Watch AI Play", type="primary", use_container_width=True):
+                try:
+                    import pygame
+                except ImportError:
+                    st.error("pygame not installed. Run locally: `pip install pygame`")
+                    st.stop()
                 st.info("Opening Pygame window... Press **ESC** to close, **R** to restart.")
                 cmd = (
                     f"cd {PROJECT_DIR} && "
@@ -269,6 +320,12 @@ elif page == "Play Game":
         scores_file = os.path.join(PROJECT_DIR, "outputs", "play_scores.json")
 
         if st.button("▶️ Start Game", type="primary", use_container_width=True):
+            try:
+                import pygame
+            except ImportError:
+                st.error("pygame not installed. Run locally: `pip install pygame`")
+                st.stop()
+
             st.info("Opening Pygame window... Play and close when done!")
             cmd = (
                 f"cd {PROJECT_DIR} && python3 train.py --mode play "
@@ -340,13 +397,34 @@ elif page == "Results":
     genome_path = os.path.join(PROJECT_DIR, "outputs", "best_genome.pkl")
 
     if not os.path.exists(genome_path):
-        st.warning("No training results yet. Go to **Train AI** to start training!")
+        st.warning(
+            "No training results yet.\n\n"
+            "Train locally first:\n"
+            "```bash\n"
+            "pip install pygame neat-python\n"
+            "python3 train.py --mode train --generations 30\n"
+            "```\n\n"
+            "Once trained, the results will appear here."
+        )
+
+        st.divider()
+        st.subheader("What You'll See After Training")
+        st.markdown(
+            """
+            After training completes, this page shows:
+            - **Best genome fitness score**
+            - **Network structure** (nodes, connections evolved by NEAT)
+            - **Node genes** and **Connection genes** tables
+            - Recommendations for improving performance
+            """
+        )
         st.stop()
 
     st.success("Trained model found!")
 
     # Load genome info
     try:
+        import pickle
         with open(genome_path, "rb") as f:
             genome = pickle.load(f)
 
